@@ -6,10 +6,10 @@ import pickle
 # ——— Load model & preprocessing objects ———
 @st.cache(allow_output_mutation=True)
 def load_objects():
-    with open("best_model.pkl", "rb") as mf:
-        model = pickle.load(mf)
-    with open("scaler_encoder.pkl", "rb") as pf:
-        preprocess = pickle.load(pf)
+    with open("best_model.pkl", "rb") as model_file:
+        model = pickle.load(model_file)
+    with open("scaler_encoder.pkl", "rb") as scaler_file:
+        preprocess = pickle.load(scaler_file)
     return model, preprocess['robust_scaler'], preprocess['ordinal_encoders'], preprocess['one_hot_columns']
 
 model, robust_scaler, ordinal_encoders, one_hot_columns = load_objects()
