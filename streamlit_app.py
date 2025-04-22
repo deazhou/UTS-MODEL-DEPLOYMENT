@@ -1,100 +1,128 @@
 import streamlit as st
 import pandas as pd
-import pickle
 import numpy as np
+import pickle
 
-# Load model dan preprocessing
-with open("best_model.pkl", "rb") as model_file:
-    model = pickle.load(model_file)
+# ——— Load model & preprocessing objects ———
+@st.cache(allow_output_mutation=True)
+def load_objects():
+    with open("best_model.pkl", "rb") as mf:
+        model = pickle.load(mf)
+    with open("scaler_encoder.pkl", "rb") as pf:
+        preprocess = pickle.load(pf)
+    return model, preprocess['robust_scaler'], preprocess['ordinal_encoders'], preprocess['one_hot_columns']
 
-with open("scaler_encoder.pkl", "rb") as preprocess_file:
-    preprocess_obj = pickle.load(preprocess_file)
+model, robust_scaler, ordinal_encoders, one_hot_columns = load_objects()
 
-# Objek preprocessing
-robust_scaler = preprocess_obj['robust_scaler']
-ordinal_encoders = preprocess_obj['ordinal_encoders']
-one_hot_columns = preprocess_obj['one_hot_columns']
+# ——— Sample test cases ———
+test_cases = {
+    "Case 1 - Business Booking": {
+        "no_of_adults": 2,
+        "no_of_children": 1,
+        "no_of_weekend_nights": 1,
+        "no_of_week_nights": 2,
+        "type_of_meal_plan": "Meal Plan 2",
+        "required_car_parking_space": 1,
+        "room_type_reserved": "Room_Type 3",
+        "lead_time": 60,
+        "arrival_year": 2024,
+        "arrival_month": 7,
+        "arrival_date": 20,
+        "market_segment_type": "Corporate",
+        "repeated_guest": 1,
+        "no_of_previous_cancellations": 1,
+        "no_of_previous_bookings_not_canceled": 2,
+        "avg_price_per_room": 150.0,
+        "no_of_special_requests": 2
+    },
+    "Case 2 - Leisure Last-Minute": {
+        "no_of_adults": 1,
+        "no_of_children": 0,
+        "no_of_weekend_nights": 0,
+        "no_of_week_nights": 1,
+        "type_of_meal_plan": "Not Selected",
+        "required_car_parking_space": 0,
+        "room_type_reserved": "Room_Type 1",
+        "lead_time": 10,
+        "arrival_year": 2023,
+        "arrival_month": 12,
+        "arrival_date": 15,
+        "market_segment_type": "Online",
+        "repeated_guest": 0,
+        "no_of_previous_cancellations": 0,
+        "no_of_previous_bookings_not_canceled": 0,
+        "avg_price_per_room": 80.0,
+        "no_of_special_requests": 0
+    }
+}
 
-# Fungsi prediksi
-def predict_new_data(new_data_df):
-    # Ordinal Encoding
-    for col, encoder in ordinal_encoders.items():
-        new_data_df[col] = encoder.transform(new_data_df[[col]])
+st.title("Hotel Booking Cancellation Prediction")
+st.write("Masukkan detail pemesanan, atau pilih salah satu test case untuk auto-fill.")
 
-    # One-hot encoding
-    new_data_df = pd.get_dummies(new_data_df, columns=[col.split('_')[0] for col in one_hot_columns], dtype='int32')
+# ——— Sidebar for selecting test case or custom ———
+option = st.sidebar.selectbox("Pilih Test Case atau Custom Input:", ["Custom"] + list(test_cases.keys()))
 
-    # Tambahkan kolom yang hilang
-    for col in one_hot_columns:
-        if col not in new_data_df.columns:
-            new_data_df[col] = 0
+# Prepare input dict
+if option == "Custom":
+    user_input = {}
+    # Numeric inputs
+    user_input['no_of_adults'] = st.sidebar.number_input('Jumlah Dewasa', min_value=0, value=2)
+    user_input['no_of_children'] = st.sidebar.number_input('Jumlah Anak', min_value=0, value=0)
+    user_input['no_of_weekend_nights'] = st.sidebar.number_input('Malam Akhir Pekan', min_value=0, value=1)
+    user_input['no_of_week_nights'] = st.sidebar.number_input('Malam Hari Kerja', min_value=0, value=2)
+    user_input['lead_time'] = st.sidebar.number_input('Lead Time (hari)', min_value=0, value=30)
+    user_input['arrival_year'] = st.sidebar.number_input('Tahun Kedatangan', min_value=2000, value=2023)
+    user_input['arrival_month'] = st.sidebar.number_input('Bulan Kedatangan', min_value=1, max_value=12, value=12)
+    user_input['arrival_date'] = st.sidebar.number_input('Tanggal Kedatangan', min_value=1, max_value=31, value=15)
+    user_input['repeated_guest'] = st.sidebar.selectbox('Tamu Berulang?', [0,1], index=0)
+    user_input['no_of_previous_cancellations'] = st.sidebar.number_input('Jumlah Pembatalan Sebelumnya', min_value=0, value=0)
+    user_input['no_of_previous_bookings_not_canceled'] = st.sidebar.number_input('Booking Sukses Sebelumnya', min_value=0, value=0)
+    user_input['avg_price_per_room'] = st.sidebar.number_input('Harga Rata-rata per Kamar (€)', min_value=0.0, value=100.0)
+    user_input['no_of_special_requests'] = st.sidebar.number_input('Permintaan Khusus', min_value=0, value=0)
+    
+    # Categorical inputs
+    user_input['type_of_meal_plan'] = st.sidebar.selectbox('Jenis Paket Makan', 
+        ['Not Selected', 'Meal Plan 1', 'Meal Plan 2', 'Meal Plan 3'])
+    user_input['required_car_parking_space'] = st.sidebar.selectbox('Butuh Parkir?', [0,1], index=0)
+    user_input['room_type_reserved'] = st.sidebar.selectbox('Jenis Kamar', 
+        ['Room_Type 1','Room_Type 2','Room_Type 3','Room_Type 4','Room_Type 5','Room_Type 6','Room_Type 7'])
+    user_input['market_segment_type'] = st.sidebar.selectbox('Segmen Pasar', 
+        ['Online','Corporate','Offline','Aviation','Complementary','Groups','Direct'])
 
-    # Urutkan kolom
-    new_data_df = new_data_df.reindex(sorted(new_data_df.columns), axis=1)
-    one_hot_columns_sorted = sorted(one_hot_columns)
-    feature_order = list(ordinal_encoders.keys()) + ['avg_price_per_room', 'lead_time'] + one_hot_columns_sorted
-    new_data_df = new_data_df[feature_order]
+else:
+    user_input = test_cases[option]
 
-    # Robust scaling
-    new_data_df[['avg_price_per_room', 'lead_time']] = robust_scaler.transform(new_data_df[['avg_price_per_room', 'lead_time']])
+# Convert to DataFrame
+input_df = pd.DataFrame([user_input])
 
-    # Prediksi
-    predictions = model.predict(new_data_df)
-    probabilities = model.predict_proba(new_data_df)
+# Preprocessing & Prediction
+@st.cache()
+def preprocess_and_predict(df):
+    # 1. Ordinal
+    for col, enc in ordinal_encoders.items():
+        df[col] = enc.transform(df[[col]])
+    # 2. One-hot
+    orig_ohe_cols = sorted({'_'.join(c.split('_')[:-1]) for c in one_hot_columns})
+    df = pd.get_dummies(df, columns=orig_ohe_cols, dtype='int32')
+    for dummy in one_hot_columns:
+        if dummy not in df.columns:
+            df[dummy] = 0
+    # 3. Scale
+    df[['avg_price_per_room','lead_time']] = robust_scaler.transform(df[['avg_price_per_room','lead_time']])
+    # 4. Reindex
+    df = df.reindex(columns=model.feature_names_in_, fill_value=0)
+    # 5. Predict
+    preds = model.predict(df)
+    probs = model.predict_proba(df)
+    return preds, probs
 
-    return predictions, probabilities
+# Run prediction
+df_copy = input_df.copy()
+preds, probs = preprocess_and_predict(df_copy)
+label_map = {0: 'Not_Canceled', 1: 'Canceled'}
 
-# UI Streamlit
-st.title("Booking Cancellation Prediction")
-
-# Input user
-with st.form("prediction_form"):
-    st.subheader("Isi data berikut:")
-    no_of_adults = st.number_input("Jumlah Dewasa", min_value=1, value=2)
-    no_of_children = st.number_input("Jumlah Anak-anak", min_value=0, value=0)
-    no_of_weekend_nights = st.number_input("Weekend Nights", min_value=0, value=1)
-    no_of_week_nights = st.number_input("Week Nights", min_value=0, value=2)
-    type_of_meal_plan = st.selectbox("Meal Plan", ["Not Selected", "Meal Plan 1", "Meal Plan 2", "Meal Plan 3"])
-    required_car_parking_space = st.selectbox("Perlu Parkir?", [0, 1])
-    room_type_reserved = st.selectbox("Tipe Kamar", ["Room_Type 1", "Room_Type 2", "Room_Type 3", "Room_Type 4", "Room_Type 5"])
-    lead_time = st.number_input("Lead Time", min_value=0, value=45)
-    arrival_year = st.selectbox("Tahun Kedatangan", [2017, 2018])
-    arrival_month = st.selectbox("Bulan Kedatangan", list(range(1, 13)))
-    arrival_date = st.selectbox("Tanggal Kedatangan", list(range(1, 32)))
-    market_segment_type = st.selectbox("Market Segment", ["Online", "Offline", "Corporate", "Aviation", "Complementary"])
-    repeated_guest = st.selectbox("Tamu Berulang?", [0, 1])
-    no_of_previous_cancellations = st.number_input("Jumlah Pembatalan Sebelumnya", min_value=0, value=0)
-    no_of_previous_bookings_not_canceled = st.number_input("Booking Sebelumnya yang Tidak Dibatalkan", min_value=0, value=0)
-    avg_price_per_room = st.number_input("Rata-rata Harga Kamar", min_value=0.0, value=100.0)
-    no_of_special_requests = st.number_input("Jumlah Permintaan Khusus", min_value=0, value=1)
-
-    submit = st.form_submit_button("Prediksi")
-
-# Saat tombol ditekan
-if submit:
-    new_data = pd.DataFrame([{
-        "no_of_adults": no_of_adults,
-        "no_of_children": no_of_children,
-        "no_of_weekend_nights": no_of_weekend_nights,
-        "no_of_week_nights": no_of_week_nights,
-        "type_of_meal_plan": type_of_meal_plan,
-        "required_car_parking_space": required_car_parking_space,
-        "room_type_reserved": room_type_reserved,
-        "lead_time": lead_time,
-        "arrival_year": arrival_year,
-        "arrival_month": arrival_month,
-        "arrival_date": arrival_date,
-        "market_segment_type": market_segment_type,
-        "repeated_guest": repeated_guest,
-        "no_of_previous_cancellations": no_of_previous_cancellations,
-        "no_of_previous_bookings_not_canceled": no_of_previous_bookings_not_canceled,
-        "avg_price_per_room": avg_price_per_room,
-        "no_of_special_requests": no_of_special_requests
-    }])
-
-    prediction, probability = predict_new_data(new_data)
-    status = "❌ Dibatalkan" if prediction[0] == 1 else "✅ Tidak Dibatalkan"
-    confidence = np.max(probability[0]) * 100
-
-    st.success(f"Hasil Prediksi: {status}")
-    st.info(f"Akurasi keyakinan model: {confidence:.2f}%")
+st.subheader("Hasil Prediksi")
+status = label_map[preds[0]]
+confidence = np.round(probs[0].max(), 4)
+st.write(f"**Booking Status:** {status}")
+st.write(f"**Confidence:** {confidence}")
